@@ -11,6 +11,7 @@ The browser client uses the common success envelope and prefixes requests with `
 | Customer parcel portal | `GET /customers/me/parcels`, `POST /customers/me/parcels/:id/cancel` |
 | Merchant booking | `GET/POST /customers`, `GET /operations/hubs`, `POST /parcels`, `POST /parcels/:id/assign-origin-hub` |
 | Hub routing and receipt | `GET /parcels`, `GET /operations/hubs`, `GET /operations/transfer-destinations`, `GET /operations/inbound-transfers`, `POST /parcels/:id/dispatch`, `POST /parcels/:id/mark-arrived` |
+| Admin operations directory | GET/POST /operations/branches, GET/POST /operations/hubs, GET/POST /operations/vehicles, GET/POST /operations/riders, GET/POST /operations/hub-managers, PATCH /operations/hub-managers/:id/hub |
 | Rider delivery | `GET /operations/riders?hubId=...`, `POST /parcels/:id/assign-rider`, `PATCH /parcels/:id/status` |
 | COD online payment | `POST /payments/stripe/customer-checkout`; Stripe returns to `/payment/success` or `/payment/cancel` |
 

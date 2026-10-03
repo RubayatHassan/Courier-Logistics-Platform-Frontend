@@ -1,2 +1,4 @@
 import { AuthScreen } from "@/components/auth-screen";
-export default function RegisterPage() { return <AuthScreen screen="register" />; }
+export default function RegisterPage() {
+  return <AuthScreen screen="register" />;
+}

@@ -41,6 +41,7 @@ export default function HomePage() {
           <a href="#journey">How it works</a>
           <a href="#track">Track a parcel</a>
           <a href="#for-customers">For customers</a>
+          <a href="#for-teams">For teams</a>
         </nav>
         <div className="nav-actions">
           <Link className="btn btn-light" href="/sign-in">
@@ -296,17 +297,81 @@ export default function HomePage() {
           <h3>Payments, made clearer</h3>
           <p>See COD and online payment status next to the delivery they belong to.</p>
         </article>
+        <article className="feature-card">
+          <span className="feature-icon">
+            <Icon name="pin" />
+          </span>
+          <h3>Every handoff has a place</h3>
+          <p>Hub teams can receive transfers and route each parcel to its next stop.</p>
+        </article>
+        <article className="feature-card">
+          <span className="feature-icon">
+            <Icon name="truck" />
+          </span>
+          <h3>Local teams stay in sync</h3>
+          <p>Riders see their assigned work and record delivery attempts as they happen.</p>
+        </article>
+        <article className="feature-card">
+          <span className="feature-icon">
+            <Icon name="users" />
+          </span>
+          <h3>One view for your team</h3>
+          <p>Merchants and operations teams get a workspace shaped around their daily work.</p>
+        </article>
+      </section>
+
+      <section className="closing-cta">
+        <div>
+          <span className="eyebrow">Ready when you are</span>
+          <h2>Make the next delivery feel easier.</h2>
+          <p>Start with an account, or check on a parcel already on its way.</p>
+        </div>
+        <div className="closing-actions">
+          <Link className="btn" href="/register">
+            Create an account <Icon name="arrowRight" size={15} />
+          </Link>
+          <a className="btn btn-light" href="#track">
+            Track a parcel <Icon name="search" size={15} />
+          </a>
+        </div>
       </section>
 
       <footer className="landing-footer">
-        <Link className="brand footer-brand" href="/">
-          <span className="brand-symbol">
-            <Icon name="arrow" size={16} />
-          </span>
-          pace
-        </Link>
-        <span>Thoughtful deliveries, from start to finish.</span>
-        <span>© {new Date().getFullYear()} Pace Logistics</span>
+        <div className="footer-main">
+          <div className="footer-brand-block">
+            <Link className="brand footer-brand" href="/">
+              <span className="brand-symbol">
+                <Icon name="arrow" size={16} />
+              </span>
+              pace
+            </Link>
+            <p>Thoughtful deliveries, from start to finish.</p>
+          </div>
+          <div className="footer-links">
+            <div>
+              <strong>Explore</strong>
+              <a href="#journey">How it works</a>
+              <a href="#for-customers">For customers</a>
+              <a href="#for-teams">For teams</a>
+              <Link href="/docs">API documentation</Link>
+            </div>
+            <div>
+              <strong>Your account</strong>
+              <Link href="/sign-in">Sign in</Link>
+              <Link href="/register">Create account</Link>
+              <a href="#track">Track a parcel</a>
+            </div>
+            <div>
+              <strong>Need a hand?</strong>
+              <a href="mailto:support@example.com">Contact support</a>
+              <span>Bangladesh delivery network</span>
+            </div>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          <span>© {new Date().getFullYear()} Pace Logistics</span>
+          <span>Made for smoother handoffs.</span>
+        </div>
       </footer>
     </main>
   );

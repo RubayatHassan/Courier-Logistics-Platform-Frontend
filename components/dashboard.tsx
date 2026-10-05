@@ -19,7 +19,7 @@ import { date, initials, money, title } from "@/lib/format";
 import { Icon } from "./icon";
 import { AdminOperations } from "./admin-operations";
 
-type Section = "overview" | "parcels" | "inbound" | "customers" | "riders" | "payments" | "operations";
+type Section = "overview" | "parcels" | "inbound" | "customers" | "riders" | "payments" | "operations" | "profile";
 type Transfer = { id: string; parcelId: string; transferredAt: string; fromHub?: Hub; toHub: Hub; parcel: Parcel };
 type Payload = Page<Parcel>;
 const states = [
@@ -42,6 +42,7 @@ function sectionLabel(section: Section, role?: Role) {
   return {
     overview: "Overview",
     operations: "Operations",
+    profile: "Profile",
     parcels: role === "ADMIN" || role === "SUPER_ADMIN" ? "Network parcels" : "My parcels",
     inbound: "Inbound transfers",
     customers: "Customers",
@@ -120,6 +121,9 @@ export function Dashboard() {
   const [checkoutPhone, setCheckoutPhone] = useState("");
   const [nextStatus, setNextStatus] = useState("DELIVERED");
   const [statusNote, setStatusNote] = useState("");
+  const [profileName, setProfileName] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const [profileWorking, setProfileWorking] = useState(false);
 
   const notify = useCallback((text: string, isError = false) => {
     setToast({ text, error: isError });
@@ -182,6 +186,8 @@ export function Dashboard() {
       .then(async (profile) => {
         if (!alive) return;
         setUser(profile);
+        setProfileName(profile.name);
+        setProfilePhone(profile.phone ?? "");
         await loadData(profile);
       })
       .catch(() => {
@@ -199,13 +205,13 @@ export function Dashboard() {
   const permissions = user?.role;
   const navSections = useMemo<Section[]>(() => {
     if (!permissions) return ["overview", "parcels"];
-    if (permissions === "CUSTOMER") return ["overview", "parcels", "payments"];
-    if (permissions === "MERCHANT") return ["overview", "parcels", "customers", "payments"];
-    if (permissions === "HUB_MANAGER") return ["overview", "parcels", "inbound", "riders"];
-    if (permissions === "ADMIN") return ["overview", "parcels", "inbound", "operations"];
-    if (permissions === "SUPER_ADMIN") return ["overview", "parcels"];
-    if (permissions === "RIDER") return ["overview", "parcels"];
-    return ["overview", "parcels", "inbound"];
+    if (permissions === "CUSTOMER") return ["overview", "parcels", "payments", "profile"];
+    if (permissions === "MERCHANT") return ["overview", "parcels", "customers", "payments", "profile"];
+    if (permissions === "HUB_MANAGER") return ["overview", "parcels", "inbound", "riders", "profile"];
+    if (permissions === "ADMIN") return ["overview", "parcels", "inbound", "operations", "profile"];
+    if (permissions === "SUPER_ADMIN") return ["overview", "parcels", "operations", "profile"];
+    if (permissions === "RIDER") return ["overview", "parcels", "profile"];
+    return ["overview", "parcels", "inbound", "profile"];
   }, [permissions]);
 
   const total = parcels.length;
@@ -393,14 +399,33 @@ export function Dashboard() {
     setWorking(true);
     setError("");
     try {
-      const checkout = await api.post<{ checkoutUrl: string }>("/payments/stripe/customer-checkout", {
-        trackingNumber: selected.trackingNumber,
-        phone: checkoutPhone,
-      });
+      const checkout = isCustomer
+        ? await api.post<{ checkoutUrl: string }>("/payments/stripe/customer-checkout", {
+            trackingNumber: selected.trackingNumber,
+            phone: checkoutPhone,
+          })
+        : await api.post<{ checkoutUrl: string }>("/payments/stripe/checkout", { parcelId: selected.id });
       window.location.assign(checkout.checkoutUrl);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Checkout শুরু করা যায়নি।");
       setWorking(false);
+    }
+  }
+
+  async function updateProfile(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!user) return;
+    setProfileWorking(true);
+    setError("");
+    try {
+      await api.patch("/auth/me", { name: profileName.trim(), phone: profilePhone.trim() || null });
+      const refreshed = await api.me().catch(() => null);
+      setUser(refreshed ?? { ...user, name: profileName.trim(), phone: profilePhone.trim() || null });
+      notify("Your profile has been updated.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Profile update হয়নি। আবার চেষ্টা করুন।");
+    } finally {
+      setProfileWorking(false);
     }
   }
 
@@ -484,6 +509,7 @@ export function Dashboard() {
                       riders: "user",
                       payments: "wallet",
                       operations: "spark",
+                      profile: "user",
                     }[item]
                   }
                   size={16}
@@ -531,13 +557,13 @@ export function Dashboard() {
               <Link className="icon-button top-help" aria-label="Help" href="mailto:support@example.com">
                 <Icon name="bell" size={16} />
               </Link>
-              <div className="topbar-user">
+              <button className="topbar-user topbar-profile-button" type="button" onClick={() => selectSection("profile")}>
                 <div className="avatar">{initials(user.name)}</div>
                 <div className="topbar-user-copy">
                   <strong>{user.name}</strong>
                   <span>{roleLabel(user.role)}</span>
                 </div>
-              </div>
+              </button>
             </div>
           </header>
 
@@ -579,7 +605,7 @@ export function Dashboard() {
               </div>
             </div>
 
-            <section className="portal-banner">
+            {section !== "profile" && <section className="portal-banner">
               <div className="portal-copy">
                 <span>
                   {isHub
@@ -618,9 +644,9 @@ export function Dashboard() {
               <span className="portal-icon">
                 <Icon name={isCustomer ? "package" : isRider ? "pin" : "spark"} size={24} />
               </span>
-            </section>
+            </section>}
 
-            <section className="metric-grid" aria-label="Parcel summary">
+            {section !== "profile" && <section className="metric-grid" aria-label="Parcel summary">
               {[
                 { label: "All parcels", value: total, icon: "package", foot: "In your current view" },
                 { label: "On the move", value: active, icon: "truck", foot: "Still making their way" },
@@ -642,7 +668,7 @@ export function Dashboard() {
                   <span className="metric-foot">{metric.foot}</span>
                 </article>
               ))}
-            </section>
+            </section>}
 
             {error && (
               <div className="notice notice-error page-notice">
@@ -654,6 +680,55 @@ export function Dashboard() {
               </div>
             )}
 
+            {section === "profile" ? (
+              <section className="panel profile-panel">
+                <div className="profile-heading">
+                  <div className="avatar avatar-lime">{initials(user.name)}</div>
+                  <div>
+                    <h2>Your profile</h2>
+                    <p>Keep the contact details for your Pace account up to date.</p>
+                  </div>
+                </div>
+                <form className="form-stack profile-form" onSubmit={updateProfile}>
+                  <label className="form-label">
+                    Full name
+                    <input
+                      className="form-input"
+                      autoComplete="name"
+                      required
+                      minLength={2}
+                      value={profileName}
+                      onChange={(event) => setProfileName(event.target.value)}
+                    />
+                  </label>
+                  <label className="form-label">
+                    Email address <span className="form-help">Managed by your verified account</span>
+                    <input className="form-input" type="email" value={user.email} readOnly />
+                  </label>
+                  <label className="form-label">
+                    Phone number
+                    <input
+                      className="form-input"
+                      autoComplete="tel"
+                      inputMode="tel"
+                      minLength={7}
+                      maxLength={20}
+                      value={profilePhone}
+                      onChange={(event) => setProfilePhone(event.target.value)}
+                      placeholder="Add a phone number"
+                    />
+                  </label>
+                  <div className="profile-meta">
+                    <span>Account type</span>
+                    <strong>{roleLabel(user.role)}</strong>
+                  </div>
+                  <button className="btn" type="submit" disabled={profileWorking || profileName.trim().length < 2}>
+                    {profileWorking ? "Saving profile…" : "Save profile"}
+                    <Icon name="check" size={14} />
+                  </button>
+                </form>
+              </section>
+            ) : (
             <div className={"work-grid " + (section === "operations" ? "admin-ops-work-grid" : "")}>
               <section className="panel section-panel">
                 <div className="section-head">
@@ -916,7 +991,12 @@ export function Dashboard() {
                   </div>
                 )}
               </section>
-              {section === "operations" && isAdmin && <AdminOperations />}
+              {section === "operations" && (isAdmin || user.role === "SUPER_ADMIN") && (
+                <AdminOperations
+                  canManageNetwork={isAdmin}
+                  allowAdminCreation={user.role === "SUPER_ADMIN"}
+                />
+              )}
 
               <aside className={"side-stack " + (section === "operations" ? "admin-ops-aside" : "")}>
                 {isCustomer && (
@@ -1006,6 +1086,7 @@ export function Dashboard() {
                 </section>
               </aside>
             </div>
+            )}
           </div>
         </section>
       </div>
@@ -1023,6 +1104,7 @@ export function Dashboard() {
                   riders: "user",
                   payments: "wallet",
                   operations: "spark",
+                  profile: "user",
                 }[item]
               }
               size={16}
@@ -1259,9 +1341,9 @@ export function Dashboard() {
                         ? "Only the recipient can cancel, and only before pickup. This parcel has already moved past that point."
                         : "Parcel information"}
                     </p>
-                    {isCustomer && selected.status === "OUT_FOR_DELIVERY" && Number(selected.codAmount) > 0 && (
+                    {selected.status === "OUT_FOR_DELIVERY" && Number(selected.codAmount) > 0 && (
                       <button className="btn" type="button" onClick={() => setDialog("checkout")}>
-                        Pay COD online <Icon name="arrowRight" size={14} />
+                        {isCustomer ? "Pay COD online" : "Create secure checkout"} <Icon name="arrowRight" size={14} />
                       </button>
                     )}
                     {selected.trackingEvents?.length ? (
@@ -1464,21 +1546,23 @@ export function Dashboard() {
                   <span>Cash on delivery</span>
                   <strong>{money(selected.codAmount)}</strong>
                 </div>
-                <label className="form-label">
-                  Recipient phone
-                  <input
-                    className="form-input"
-                    required
-                    minLength={7}
-                    maxLength={20}
-                    inputMode="tel"
-                    value={checkoutPhone}
-                    onChange={(e) => setCheckoutPhone(e.target.value)}
-                    placeholder="The phone saved by the sender"
-                  />
-                </label>
+                {isCustomer && (
+                  <label className="form-label">
+                    Recipient phone
+                    <input
+                      className="form-input"
+                      required
+                      minLength={7}
+                      maxLength={20}
+                      inputMode="tel"
+                      value={checkoutPhone}
+                      onChange={(e) => setCheckoutPhone(e.target.value)}
+                      placeholder="The phone saved by the sender"
+                    />
+                  </label>
+                )}
                 <p className="form-help">
-                  Secure checkout opens with Stripe. Delivery completes after Stripe confirms payment.
+                  Stripe opens a secure checkout. Delivery completes after Stripe confirms payment.
                 </p>
                 <button className="btn" disabled={working}>
                   {working ? "Opening secure checkout…" : "Continue to secure payment"}

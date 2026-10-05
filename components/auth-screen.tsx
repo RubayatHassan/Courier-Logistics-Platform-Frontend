@@ -1,13 +1,29 @@
 "use client";
 
 import Link from "next/link";
+import Script from "next/script";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { Icon } from "./icon";
 import { z } from "zod";
 
 type Screen = "login" | "register" | "verify" | "forgot" | "reset";
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (options: {
+            client_id: string;
+            callback: (response: { credential: string }) => void;
+          }) => void;
+          renderButton: (element: HTMLElement, options: { theme: string; size: string; width: number }) => void;
+        };
+      };
+    };
+  }
+}
 const copy: Record<Screen, { title: string; subtitle: string }> = {
   login: { title: "Welcome back.", subtitle: "Everything moving through your account, all in one place." },
   register: { title: "A better way to deliver.", subtitle: "Create an account. It only takes a moment." },
@@ -28,15 +44,59 @@ export function AuthScreen({ screen }: { screen: Screen }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
   const heading = copy[screen];
   const inputClass = "form-input";
-  const showDemoLogin = process.env.NODE_ENV === "development";
+  const showDemoLogin =
+    process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_DEMO_LOGIN_ENABLED === "true";
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+  const signInWithGoogle = useCallback(async (credential: string) => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.googleLogin(credential);
+      router.replace("/dashboard");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Google sign-in সম্পন্ন হয়নি। আবার চেষ্টা করুন।");
+    } finally {
+      setBusy(false);
+    }
+  }, [router]);
+
+  useEffect(() => {
+    if (!googleReady || screen !== "login" || !googleClientId || !window.google) return;
+    const button = document.getElementById("pace-google-signin");
+    if (!button) return;
+    button.replaceChildren();
+    window.google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: ({ credential }) => void signInWithGoogle(credential),
+    });
+    window.google.accounts.id.renderButton(button, {
+      theme: "outline",
+      size: "large",
+      width: Math.min(360, button.clientWidth || 320),
+    });
+  }, [googleReady, screen, googleClientId, signInWithGoogle]);
 
   async function demoLogin(role: "ADMIN" | "MERCHANT") {
+    const isDevelopment = process.env.NODE_ENV === "development";
     const account =
       role === "ADMIN"
-        ? { email: "admin@example.com", password: "Password123!" }
-        : { email: "merchant@example.com", password: "Password123!" };
+        ? {
+            email: process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL ?? (isDevelopment ? "admin@example.com" : ""),
+            password: process.env.NEXT_PUBLIC_DEMO_ADMIN_PASSWORD ?? (isDevelopment ? "Password123!" : ""),
+          }
+        : {
+            email: process.env.NEXT_PUBLIC_DEMO_MERCHANT_EMAIL ?? (isDevelopment ? "merchant@example.com" : ""),
+            password: process.env.NEXT_PUBLIC_DEMO_MERCHANT_PASSWORD ?? (isDevelopment ? "Password123!" : ""),
+          };
+    if (!account.email || !account.password) {
+      setError("Demo login is not configured.");
+      return;
+    }
     setBusy(true);
     setError("");
     setNotice("");
@@ -52,9 +112,57 @@ export function AuthScreen({ screen }: { screen: Screen }) {
   }
 
   useEffect(() => {
-    if (screen === "verify") setEmail(sessionStorage.getItem("pace_verification_email") || "");
-    if (screen === "reset") setEmail(sessionStorage.getItem("pace_reset_email") || "");
-  }, [screen]);
+    if (screen === "verify") {
+      setEmail(sessionStorage.getItem("pace_verification_email") || "");
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get("token") || params.get("verificationToken");
+      const linkCode = params.get("code");
+      if (token || linkCode) {
+        setBusy(true);
+        const query = new URLSearchParams();
+        if (token) query.set("token", token);
+        else if (linkCode) query.set("code", linkCode);
+        const linkEmail = params.get("email");
+        if (linkEmail) query.set("email", linkEmail);
+        api
+          .get(`/auth/verify-email?${query.toString()}`)
+          .then(() => {
+            sessionStorage.removeItem("pace_verification_email");
+            router.replace("/sign-in?verified=1");
+          })
+          .catch((err) => setError(err instanceof ApiError ? err.message : "Verification linkটি কাজ করেনি।"))
+          .finally(() => setBusy(false));
+      }
+    }
+    if (screen === "reset") {
+      setEmail(sessionStorage.getItem("pace_reset_email") || "");
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get("token") || params.get("resetToken");
+      const linkCode = params.get("code");
+      if (token || linkCode) {
+        setBusy(true);
+        const suppliedCode = linkCode || (token && /^\d{6}$/.test(token) ? token : "");
+        if (suppliedCode) setCode(suppliedCode);
+        const query = new URLSearchParams();
+        if (token) query.set("token", token);
+        else if (linkCode) query.set("code", linkCode);
+        const linkEmail = params.get("email");
+        if (linkEmail) {
+          query.set("email", linkEmail);
+          setEmail(linkEmail);
+        }
+        api
+          .get<{ email?: string; code?: string }>(`/auth/reset-password?${query.toString()}`)
+          .then((link) => {
+            if (link.email) setEmail(link.email);
+            if (link.code && /^\d{6}$/.test(link.code)) setCode(link.code);
+            setNotice("Reset link confirmed. Choose a new password below.");
+          })
+          .catch((err) => setError(err instanceof ApiError ? err.message : "Reset linkটি যাচাই করা যায়নি।"))
+          .finally(() => setBusy(false));
+      }
+    }
+  }, [screen, router]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -142,6 +250,13 @@ export function AuthScreen({ screen }: { screen: Screen }) {
 
   return (
     <main className="auth-shell">
+      {screen === "login" && googleClientId && (
+        <Script
+          src="https://accounts.google.com/gsi/client"
+          strategy="afterInteractive"
+          onReady={() => setGoogleReady(true)}
+        />
+      )}
       <aside className="auth-story">
         <Link className="brand" href="/">
           <span className="brand-symbol">
@@ -344,6 +459,15 @@ export function AuthScreen({ screen }: { screen: Screen }) {
               )}
             </button>
           </form>
+          {screen === "login" && googleClientId && (
+            <div className="google-signin-wrap">
+              <span className="google-divider">or continue with</span>
+              <fieldset className="google-button-fieldset">
+                <legend className="sr-only">Sign in with Google</legend>
+                <div id="pace-google-signin" />
+              </fieldset>
+            </div>
+          )}
           {screen === "login" && showDemoLogin && (
             <section className="demo-login" aria-label="Quick demo login">
               <p className="demo-login-title">Try the workspace</p>
@@ -365,7 +489,11 @@ export function AuthScreen({ screen }: { screen: Screen }) {
                   Demo Merchant
                 </button>
               </div>
-              <p className="demo-login-help">Uses local demo accounts. Available in development only.</p>
+              <p className="demo-login-help">
+                {process.env.NODE_ENV === "development"
+                  ? "Uses local demo accounts. Available in development only."
+                  : "Quick access to the demo workspaces."}
+              </p>
             </section>
           )}
           {screen === "verify" && (

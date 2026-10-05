@@ -20,7 +20,13 @@ function messageFor(error: unknown) {
   return error instanceof ApiError ? error.message : "Request failed. Please try again.";
 }
 
-export function AdminOperations() {
+export function AdminOperations({
+  canManageNetwork,
+  allowAdminCreation,
+}: {
+  canManageNetwork: boolean;
+  allowAdminCreation: boolean;
+}) {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [hubs, setHubs] = useState<HubRecord[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -33,6 +39,10 @@ export function AdminOperations() {
   const [notice, setNotice] = useState("");
 
   const refresh = useCallback(async () => {
+    if (!canManageNetwork) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -54,7 +64,7 @@ export function AdminOperations() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canManageNetwork]);
 
   useEffect(() => {
     void refresh();
@@ -136,9 +146,32 @@ export function AdminOperations() {
     setError("");
     setNotice("");
     try {
-      await api.patch("/operations/hub-managers/" + manager.id + "/hub", { hubId });
-      setNotice("Hub assignment updated for " + manager.name + ".");
+      await api.patch(`/operations/hub-managers/${manager.id}/hub`, { hubId });
+      setNotice(`Hub assignment updated for ${manager.name}.`);
       await refresh();
+    } catch (err) {
+      setError(messageFor(err));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function createAdmin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    const field = (name: string) => String(values.get(name) ?? "").trim();
+    setBusy("admin");
+    setError("");
+    setNotice("");
+    try {
+      await api.post("/auth/admins", {
+        name: field("name"),
+        email: field("email"),
+        password: field("password"),
+      });
+      form.reset();
+      setNotice("Administrator account created.");
     } catch (err) {
       setError(messageFor(err));
     } finally {
@@ -159,12 +192,18 @@ export function AdminOperations() {
     <div className="admin-operations">
       <div className="admin-ops-intro">
         <div>
-          <h3>Network setup</h3>
-          <p>Create locations and staff, then keep their hub assignments current.</p>
+          <h3>{canManageNetwork ? "Network setup" : "Admin accounts"}</h3>
+          <p>
+            {canManageNetwork
+              ? "Create locations and staff, then keep their hub assignments current."
+              : "Create administrator accounts for your workspace."}
+          </p>
         </div>
-        <button className="btn btn-light btn-small" type="button" onClick={() => void refresh()} disabled={loading}>
-          {loading ? "Refreshing…" : "Refresh"}
-        </button>
+        {canManageNetwork && (
+          <button className="btn btn-light btn-small" type="button" onClick={() => void refresh()} disabled={loading}>
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
+        )}
       </div>
 
       {error && (
@@ -179,6 +218,7 @@ export function AdminOperations() {
       )}
 
       <div className="admin-ops-grid">
+        {canManageNetwork && <>
         <article className="panel admin-ops-card">
           <div className="admin-ops-card-head">
             <span className="metric-icon">
@@ -326,7 +366,7 @@ export function AdminOperations() {
                   <strong>{vehicle.plateNumber}</strong>
                   <span>
                     {vehicle.type}
-                    {vehicle.capacityKg ? " · " + vehicle.capacityKg + " kg" : ""}
+                    {vehicle.capacityKg ? ` · ${vehicle.capacityKg} kg` : ""}
                   </span>
                 </div>
               ))
@@ -461,7 +501,7 @@ export function AdminOperations() {
                   </div>
                   <select
                     className="form-input"
-                    aria-label={"Hub for " + manager.name}
+                    aria-label={`Hub for ${manager.name}`}
                     value={managerHubDrafts[manager.id] ?? ""}
                     onChange={(event) =>
                       setManagerHubDrafts((drafts) => ({ ...drafts, [manager.id]: event.target.value }))
@@ -493,6 +533,48 @@ export function AdminOperations() {
             )}
           </div>
         </article>
+        </>}
+
+        {allowAdminCreation && (
+          <article className="panel admin-ops-card admin-account-card">
+            <div className="admin-ops-card-head">
+              <span className="metric-icon">
+                <Icon name="users" size={15} />
+              </span>
+              <div>
+                <h3>Create administrator</h3>
+                <p>Add an administrator account to the workspace.</p>
+              </div>
+            </div>
+            <form className="form-stack admin-ops-form" onSubmit={(event) => void createAdmin(event)}>
+              <div className="admin-ops-form-grid">
+                <label className="form-label">
+                  Full name
+                  <input className="form-input" name="name" required minLength={2} autoComplete="name" />
+                </label>
+                <label className="form-label">
+                  Email
+                  <input className="form-input" name="email" type="email" required autoComplete="email" />
+                </label>
+                <label className="form-label admin-ops-full">
+                  Temporary password
+                  <input
+                    className="form-input"
+                    name="password"
+                    type="password"
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                  />
+                </label>
+              </div>
+              <button className="btn btn-small" type="submit" disabled={busy === "admin"}>
+                {busy === "admin" ? "Creating…" : "Create administrator"}
+                <Icon name="arrowRight" size={13} />
+              </button>
+            </form>
+          </article>
+        )}
       </div>
     </div>
   );

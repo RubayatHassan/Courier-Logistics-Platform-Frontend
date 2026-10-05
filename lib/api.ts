@@ -1,7 +1,8 @@
 const DEFAULT_API_BASE = process.env.NODE_ENV === "production"
   ? "https://courier-logistics-platform-api.vercel.app/api/v1"
   : "http://localhost:4000/api/v1";
-export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE).replace(/\/$/, "");
+const CONFIGURED_API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE).replace(/\/$/, "");
+export const API_BASE = process.env.NODE_ENV === "development" ? "/api/proxy" : CONFIGURED_API_BASE;
 const TOKEN_KEY = "pace_access_token";
 const PUBLIC_AUTH_PATHS = new Set([
   "/auth/register",
@@ -131,5 +132,15 @@ export const api = {
   },
   async me() {
     return request<User>("/auth/me");
+  },
+  async googleLogin(credential: string) {
+    clearAccessToken();
+    const result = await request<{ accessToken: string; user: User }>(
+      "/auth/google",
+      json({ credential }),
+      false,
+    );
+    saveAccessToken(result.accessToken);
+    return result.user;
   },
 };
